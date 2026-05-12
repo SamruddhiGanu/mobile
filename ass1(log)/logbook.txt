@@ -1,0 +1,118 @@
+package logtime;
+
+import java.io.IOException;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+public class log {
+
+public static void main(String[] args) throws Exception
+{
+
+// configuration
+Configuration c = new Configuration();
+
+// get input and output paths
+String[] files = new GenericOptionsParser(c,args).getRemainingArgs();
+
+Path input = new Path(files[0]);
+Path output = new Path(files[1]);
+
+// create job
+Job j = new Job(c,"maxsessionuser");
+
+j.setJarByClass(log.class);
+
+j.setMapperClass(MapForSession.class);
+j.setReducerClass(ReduceForSession.class);
+
+// output types
+j.setOutputKeyClass(Text.class);
+j.setOutputValueClass(IntWritable.class);
+
+// set paths
+FileInputFormat.addInputPath(j,input);
+FileOutputFormat.setOutputPath(j,output);
+
+// execute job
+System.exit(j.waitForCompletion(true)?0:1);
+
+}
+
+// ---------------- MAPPER ----------------
+
+public static class MapForSession extends Mapper<LongWritable, Text, Text, IntWritable>
+{
+
+public void map(LongWritable key, Text value, Context con)
+throws IOException, InterruptedException
+{
+
+String line = value.toString();
+
+// skip header row
+if(line.contains("MAC_Address"))
+return;
+
+// split CSV
+String[] fields = line.split(",");
+
+// extract MAC address and session duration
+String mac = fields[0].trim();
+
+int duration = Integer.parseInt(fields[3].trim());
+
+// send to reducer
+con.write(new Text(mac), new IntWritable(duration));
+
+}
+}
+
+// ---------------- REDUCER ----------------
+
+public static class ReduceForSession extends Reducer<Text, IntWritable, Text, IntWritable>
+{
+
+private Text maxUser = new Text();
+private int maxTime = 0;
+
+public void reduce(Text mac, Iterable<IntWritable> values, Context con)
+throws IOException, InterruptedException
+{
+
+int sum = 0;
+
+// calculate total session time
+for(IntWritable v : values)
+{
+sum += v.get();
+}
+
+// check maximum
+if(sum > maxTime)
+{
+maxTime = sum;
+maxUser.set(mac);
+}
+
+}
+
+// final output
+public void cleanup(Context con)
+throws IOException, InterruptedException
+{
+
+con.write(maxUser, new IntWritable(maxTime));
+
+}
+}
+}

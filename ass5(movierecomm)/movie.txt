@@ -1,0 +1,94 @@
+package moviebook;
+
+import java.io.IOException;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.FloatWritable;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+public class movie {
+
+public static void main(String[] args) throws Exception
+{
+
+Configuration c = new Configuration();
+
+String[] files = new GenericOptionsParser(c,args).getRemainingArgs();
+
+Path input = new Path(files[0]);
+Path output = new Path(files[1]);
+
+Job j = new Job(c,"movie");
+
+j.setJarByClass(movie.class);
+
+j.setMapperClass(MapForMovie.class);
+j.setReducerClass(ReduceForMovie.class);
+
+j.setOutputKeyClass(Text.class);
+j.setOutputValueClass(FloatWritable.class);
+
+FileInputFormat.addInputPath(j,input);
+FileOutputFormat.setOutputPath(j,output);
+
+System.exit(j.waitForCompletion(true)?0:1);
+
+}
+
+// ---------------- MAPPER ----------------
+
+public static class MapForMovie extends Mapper<LongWritable, Text, Text, FloatWritable>
+{
+
+public void map(LongWritable key, Text value, Context con)
+throws IOException, InterruptedException
+{
+
+String line = value.toString();
+
+if(line.contains("userid"))
+return;
+
+String[] fields = line.split(",");
+
+String movieid = fields[1];
+
+float rating = Float.parseFloat(fields[2]);
+
+con.write(new Text(movieid), new FloatWritable(rating));
+
+}
+}
+
+// ---------------- REDUCER ----------------
+
+public static class ReduceForMovie extends Reducer<Text, FloatWritable, Text, FloatWritable>
+{
+
+public void reduce(Text movie, Iterable<FloatWritable> values, Context con)
+throws IOException, InterruptedException
+{
+
+float sum = 0;
+int count = 0;
+
+for(FloatWritable v : values)
+{
+sum += v.get();
+count++;
+}
+
+float avg = sum / count;
+
+con.write(movie, new FloatWritable(avg));
+
+}
+}
+}
